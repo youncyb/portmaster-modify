@@ -39,7 +39,7 @@ export class FeatureScoutComponent implements OnInit {
 
   /** Returns whether or not the current package has the Network History feature */
   get packageHasHistory() {
-    return this.profile?.current_plan?.feature_ids?.includes(FeatureID.History)
+    return true
   }
 
   constructor(

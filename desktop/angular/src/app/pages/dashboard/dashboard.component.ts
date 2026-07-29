@@ -1,9 +1,9 @@
 import { KeyValue } from "@angular/common";
 import { AfterContentInit, AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, ElementRef, OnInit, QueryList, TrackByFunction, ViewChild, ViewChildren, forwardRef, inject } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
-import { AppProfileService, BandwidthChartResult, ChartResult, Database, FeatureID, Netquery, PortapiService, SPNService, UserProfile, Verdict } from "@safing/portmaster-api";
+import { AppBandwidthBarRow, AppBandwidthPeriod, AppProfileService, BandwidthChartResult, ChartResult, Database, FeatureID, Netquery, PortapiService, SPNService, UserProfile, Verdict } from "@safing/portmaster-api";
 import { SfngDialogService, SfngTabGroupComponent } from "@safing/ui";
-import { Observable, catchError, filter, interval, map, repeat, retry, startWith, throwError } from "rxjs";
+import { BehaviorSubject, Observable, catchError, filter, interval, map, of, repeat, retry, startWith, switchMap, throwError } from "rxjs";
 import { ActionIndicatorService } from 'src/app/shared/action-indicator';
 import { DefaultBandwidthChartConfig, SfngNetqueryLineChartComponent } from "src/app/shared/netquery/line-chart/line-chart";
 import { SPNAccountDetailsComponent } from "src/app/shared/spn-account-details";
@@ -83,6 +83,15 @@ export class DashboardPageComponent implements OnInit, AfterViewInit {
 
   bandwidthBarData: BandwidthBarData[] = [];
 
+  appBandwidthPeriod: AppBandwidthPeriod = 'day';
+  appBandwidthPeriods: { id: AppBandwidthPeriod; label: string }[] = [
+    { id: 'day', label: 'Day' },
+    { id: 'week', label: 'Week' },
+    { id: 'month', label: 'Month' },
+  ];
+  appBandwidthData: AppBandwidthBarRow[] = [];
+  private readonly appBandwidthReload$ = new BehaviorSubject<void>(undefined);
+
   readonly bandwidthBarConfig: CircularBarChartConfig<BandwidthBarData> = {
     stack: 'profile_name',
     seriesKey: 'series',
@@ -148,7 +157,7 @@ export class DashboardPageComponent implements OnInit, AfterViewInit {
 
   profile: UserProfile | null = null;
 
-  featureBw = false;
+  featureBw = true;
   featureSPN = false;
 
   hoveredCard: NewsCard | null = null;
@@ -192,6 +201,14 @@ export class DashboardPageComponent implements OnInit, AfterViewInit {
 
   onCarouselTabHover(card: NewsCard | null) {
     this.hoveredCard = card;
+  }
+
+  setAppBandwidthPeriod(period: AppBandwidthPeriod) {
+    if (this.appBandwidthPeriod === period) {
+      return;
+    }
+    this.appBandwidthPeriod = period;
+    this.appBandwidthReload$.next();
   }
 
   openAccountDetails() {
@@ -436,6 +453,19 @@ export class DashboardPageComponent implements OnInit, AfterViewInit {
         this.cdr.markForCheck();
       })
 
+    this.appBandwidthReload$
+      .pipe(
+        switchMap(() => interval(15000).pipe(startWith(0))),
+        switchMap(() => this.netquery.appBandwidthChart(this.appBandwidthPeriod, 20).pipe(
+          catchError(() => of([] as AppBandwidthBarRow[])),
+        )),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((rows) => {
+        this.appBandwidthData = rows || [];
+        this.cdr.markForCheck();
+      });
+
     this.netquery
       .activeConnectionChart({ tunneled: { $eq: true } })
       .pipe(
@@ -457,7 +487,7 @@ export class DashboardPageComponent implements OnInit, AfterViewInit {
       .subscribe({
         next: (profile) => {
           this.profile = profile || null;
-          this.featureBw = profile?.current_plan?.feature_ids?.includes(FeatureID.Bandwidth) || false;
+          this.featureBw = true;
           this.featureSPN = profile?.current_plan?.feature_ids?.includes(FeatureID.SPN) || false;
 
           // force a full change-detection cylce now!

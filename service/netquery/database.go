@@ -314,6 +314,24 @@ func (db *Database) ApplyMigrations() error {
 		return fmt.Errorf("failed to create main.bandwidth database: %w", err)
 	}
 
+	appDailySchema := `CREATE TABLE IF NOT EXISTS history.bandwidth_app_daily (
+		day TEXT NOT NULL,
+		profile TEXT NOT NULL,
+		profile_name TEXT NOT NULL DEFAULT '',
+		incoming INTEGER NOT NULL DEFAULT 0,
+		outgoing INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (day, profile)
+	)`
+	if err := sqlitex.ExecuteTransient(db.writeConn, appDailySchema, nil); err != nil {
+		return fmt.Errorf("failed to create history.bandwidth_app_daily table: %w", err)
+	}
+	if err := sqlitex.ExecuteTransient(db.writeConn,
+		`CREATE INDEX IF NOT EXISTS history.bandwidth_app_daily_day_index ON bandwidth_app_daily (day)`,
+		nil,
+	); err != nil {
+		return fmt.Errorf("failed to create history.bandwidth_app_daily day index: %w", err)
+	}
+
 	return nil
 }
 
@@ -421,26 +439,68 @@ func (db *Database) Cleanup(ctx context.Context, threshold time.Time) (int, erro
 
 // RemoveAllHistoryData removes all connections from the history database.
 func (db *Database) RemoveAllHistoryData(ctx context.Context) error {
-	query := fmt.Sprintf("DELETE FROM %s.connections", HistoryDatabase)
-	return db.ExecuteWrite(ctx, query)
+	merr := new(multierror.Error)
+	if err := db.ExecuteWrite(ctx, fmt.Sprintf("DELETE FROM %s.connections", HistoryDatabase)); err != nil {
+		merr.Errors = append(merr.Errors, err)
+	}
+	if err := db.ExecuteWrite(ctx, "DELETE FROM history.bandwidth_app_daily"); err != nil {
+		merr.Errors = append(merr.Errors, err)
+	}
+	return merr.ErrorOrNil()
 }
 
 // RemoveHistoryForProfile removes all connections from the history database
 // for a given profile ID (source/id).
 func (db *Database) RemoveHistoryForProfile(ctx context.Context, profileID string) error {
-	query := fmt.Sprintf("DELETE FROM %s.connections WHERE profile = :profile", HistoryDatabase)
-	return db.ExecuteWrite(ctx, query, orm.WithNamedArgs(map[string]any{
+	merr := new(multierror.Error)
+	if err := db.ExecuteWrite(ctx, fmt.Sprintf("DELETE FROM %s.connections WHERE profile = :profile", HistoryDatabase), orm.WithNamedArgs(map[string]any{
 		":profile": profileID,
-	}))
+	})); err != nil {
+		merr.Errors = append(merr.Errors, err)
+	}
+	if err := db.ExecuteWrite(ctx, "DELETE FROM history.bandwidth_app_daily WHERE profile = :profile", orm.WithNamedArgs(map[string]any{
+		":profile": profileID,
+	})); err != nil {
+		merr.Errors = append(merr.Errors, err)
+	}
+	return merr.ErrorOrNil()
 }
 
 // MigrateProfileID migrates the given profile IDs in the history database.
 // This needs to be done when profiles are deleted and replaced by a different profile.
 func (db *Database) MigrateProfileID(ctx context.Context, from string, to string) error {
-	return db.ExecuteWrite(ctx, "UPDATE history.connections SET profile = :to WHERE profile = :from", orm.WithNamedArgs(map[string]any{
+	merr := new(multierror.Error)
+	if err := db.ExecuteWrite(ctx, "UPDATE history.connections SET profile = :to WHERE profile = :from", orm.WithNamedArgs(map[string]any{
 		":from": from,
 		":to":   to,
-	}))
+	})); err != nil {
+		merr.Errors = append(merr.Errors, err)
+	}
+	// Merge daily rows when target profile already has the same day.
+	if err := db.ExecuteWrite(ctx, `
+		INSERT INTO history.bandwidth_app_daily (day, profile, profile_name, incoming, outgoing)
+		SELECT day, :to, profile_name, incoming, outgoing
+		FROM history.bandwidth_app_daily
+		WHERE profile = :from
+		ON CONFLICT(day, profile) DO UPDATE SET
+			incoming = incoming + excluded.incoming,
+			outgoing = outgoing + excluded.outgoing,
+			profile_name = CASE
+				WHEN excluded.profile_name != '' THEN excluded.profile_name
+				ELSE history.bandwidth_app_daily.profile_name
+			END
+	`, orm.WithNamedArgs(map[string]any{
+		":from": from,
+		":to":   to,
+	})); err != nil {
+		merr.Errors = append(merr.Errors, err)
+	}
+	if err := db.ExecuteWrite(ctx, "DELETE FROM history.bandwidth_app_daily WHERE profile = :from", orm.WithNamedArgs(map[string]any{
+		":from": from,
+	})); err != nil {
+		merr.Errors = append(merr.Errors, err)
+	}
+	return merr.ErrorOrNil()
 }
 
 // dumpTo is a simple helper method that dumps all rows stored in the SQLite database
@@ -541,6 +601,21 @@ func (db *Database) CleanupHistory(ctx context.Context) error {
 	// Log summary.
 	tracer.Infof("history: deleted connections outside of retention from %d profiles", profileCnt)
 
+	// Clean per-app daily bandwidth outside the global retention window.
+	// Default to 90 days when keep-history is 0 (forever for connections).
+	bwRetentionDays := globalRetentionDays
+	if bwRetentionDays <= 0 {
+		bwRetentionDays = 90
+	}
+	bwThreshold := time.Now().Add(-1 * time.Duration(bwRetentionDays) * time.Hour * 24).Format("2006-01-02")
+	if err := db.ExecuteWrite(ctx,
+		"DELETE FROM history.bandwidth_app_daily WHERE day < :threshold",
+		orm.WithNamedArgs(map[string]any{":threshold": bwThreshold}),
+	); err != nil {
+		tracer.Warningf("history: failed to delete old bandwidth_app_daily rows: %s", err)
+		merr.Errors = append(merr.Errors, fmt.Errorf("bandwidth_app_daily: %w", err))
+	}
+
 	return merr.ErrorOrNil()
 }
 
@@ -559,7 +634,7 @@ func (db *Database) MarkAllHistoryConnectionsEnded(ctx context.Context) error {
 
 // UpdateBandwidth updates bandwidth data for the connection and optionally also writes
 // the bandwidth data to the history database.
-func (db *Database) UpdateBandwidth(ctx context.Context, enableHistory bool, profileKey string, processKey string, connID string, bytesReceived uint64, bytesSent uint64) error {
+func (db *Database) UpdateBandwidth(ctx context.Context, enableHistory bool, profileKey string, profileName string, processKey string, connID string, bytesReceived uint64, bytesSent uint64) error {
 	params := map[string]any{
 		":id": makeNqIDFromParts(processKey, connID),
 	}
@@ -596,7 +671,96 @@ func (db *Database) UpdateBandwidth(ctx context.Context, enableHistory bool, pro
 		merr.Errors = append(merr.Errors, fmt.Errorf("failed to update main.bandwidth: %w", err))
 	}
 
+	// Persist per-app daily totals for day/week/month charts (always, independent of connection history).
+	if profileKey != "" && (bytesReceived > 0 || bytesSent > 0) {
+		dayParams := map[string]any{
+			":day":          time.Now().Format("2006-01-02"),
+			":profile":      profileKey,
+			":profile_name": profileName,
+			":incoming":     bytesReceived,
+			":outgoing":     bytesSent,
+		}
+		dayStmt := `INSERT INTO history.bandwidth_app_daily (day, profile, profile_name, incoming, outgoing)
+			VALUES (:day, :profile, :profile_name, :incoming, :outgoing)
+			ON CONFLICT(day, profile) DO UPDATE SET
+				incoming = incoming + excluded.incoming,
+				outgoing = outgoing + excluded.outgoing,
+				profile_name = CASE
+					WHEN excluded.profile_name != '' THEN excluded.profile_name
+					ELSE history.bandwidth_app_daily.profile_name
+				END`
+		if err := db.ExecuteWrite(ctx, dayStmt, orm.WithNamedArgs(dayParams)); err != nil {
+			merr.Errors = append(merr.Errors, fmt.Errorf("failed to update history.bandwidth_app_daily: %w", err))
+		}
+	}
+
 	return merr.ErrorOrNil()
+}
+
+// AppBandwidthPeriod is the aggregation window for per-app bandwidth charts.
+type AppBandwidthPeriod string
+
+// Supported app bandwidth periods.
+const (
+	AppBandwidthPeriodDay   AppBandwidthPeriod = "day"
+	AppBandwidthPeriodWeek  AppBandwidthPeriod = "week"
+	AppBandwidthPeriodMonth AppBandwidthPeriod = "month"
+)
+
+// AppBandwidthRow is one app's aggregated bandwidth for a period.
+type AppBandwidthRow struct {
+	Profile     string `json:"profile" sqlite:"profile"`
+	ProfileName string `json:"profile_name" sqlite:"profile_name"`
+	Incoming    int64  `json:"incoming" sqlite:"incoming"`
+	Outgoing    int64  `json:"outgoing" sqlite:"outgoing"`
+}
+
+// QueryAppBandwidthByPeriod returns per-app upload/download totals for the given period.
+func (db *Database) QueryAppBandwidthByPeriod(ctx context.Context, period AppBandwidthPeriod, limit int) ([]AppBandwidthRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	now := time.Now()
+	to := now.Format("2006-01-02")
+	var from string
+	switch period {
+	case AppBandwidthPeriodDay:
+		from = to
+	case AppBandwidthPeriodWeek:
+		from = now.AddDate(0, 0, -6).Format("2006-01-02")
+	case AppBandwidthPeriodMonth:
+		from = now.AddDate(0, 0, -29).Format("2006-01-02")
+	default:
+		return nil, fmt.Errorf("unsupported period %q", period)
+	}
+
+	query := `SELECT profile,
+		MAX(profile_name) AS profile_name,
+		SUM(incoming) AS incoming,
+		SUM(outgoing) AS outgoing
+	FROM history.bandwidth_app_daily
+	WHERE day >= :from AND day <= :to
+	GROUP BY profile
+	HAVING (SUM(incoming) + SUM(outgoing)) > 0
+	ORDER BY (SUM(incoming) + SUM(outgoing)) DESC
+	LIMIT :limit`
+
+	var result []AppBandwidthRow
+	if err := db.Execute(ctx, query,
+		orm.WithNamedArgs(map[string]any{
+			":from":  from,
+			":to":    to,
+			":limit": limit,
+		}),
+		orm.WithResult(&result),
+	); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // Save inserts the connection conn into the SQLite database. If conn

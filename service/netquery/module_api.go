@@ -72,6 +72,10 @@ func (nq *NetQuery) prepare() error {
 		Database: nq.Store,
 	}
 
+	appBwChartHandler := &AppBandwidthChartHandler{
+		Database: nq.Store,
+	}
+
 	if err := api.RegisterEndpoint(api.Endpoint{
 		Name:        "Query Connections",
 		Description: "Query the in-memory sqlite connection database.",
@@ -115,6 +119,17 @@ func (nq *NetQuery) prepare() error {
 		HandlerFunc: bwChartHandler.ServeHTTP,
 		Name:        "Bandwidth Chart",
 		Description: "Query the in-memory sqlite connection database and return a chart of bytes sent/received.",
+	}); err != nil {
+		return fmt.Errorf("failed to register API endpoint: %w", err)
+	}
+
+	if err := api.RegisterEndpoint(api.Endpoint{
+		Path:        "netquery/charts/bandwidth-app",
+		MimeType:    "application/json",
+		Write:       api.PermitUser,
+		HandlerFunc: appBwChartHandler.ServeHTTP,
+		Name:        "App Bandwidth Chart",
+		Description: "Query per-app upload/download totals for day, week, or month.",
 	}); err != nil {
 		return fmt.Errorf("failed to register API endpoint: %w", err)
 	}

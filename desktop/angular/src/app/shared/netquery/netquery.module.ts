@@ -26,6 +26,7 @@ import { SfngNetquerySearchOverlayComponent } from "./search-overlay";
 import { SfngNetquerySearchbarComponent, SfngNetquerySuggestionDirective } from "./searchbar";
 import { SfngNetqueryTagbarComponent } from "./tag-bar";
 import { CircularBarChartComponent } from './circular-bar-chart/circular-bar-chart.component';
+import { SfngNetqueryAppBandwidthBarComponent } from './app-bandwidth-bar/app-bandwidth-bar';
 
 @NgModule({
   imports: [
@@ -57,6 +58,7 @@ import { CircularBarChartComponent } from './circular-bar-chart/circular-bar-cha
     SfngNetquerySearchOverlayComponent,
     SfngNetqueryScopeLabelComponent,
     CircularBarChartComponent,
+    SfngNetqueryAppBandwidthBarComponent,
   ],
   declarations: [
     SfngNetqueryViewer,
@@ -75,6 +77,7 @@ import { CircularBarChartComponent } from './circular-bar-chart/circular-bar-cha
     CanShowConnection,
     CombinedMenuPipe,
     CircularBarChartComponent,
+    SfngNetqueryAppBandwidthBarComponent,
     CountryNamePipe,
   ],
   providers: [

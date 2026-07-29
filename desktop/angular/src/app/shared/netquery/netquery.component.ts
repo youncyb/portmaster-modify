@@ -3,7 +3,7 @@ import { FormatWidth, formatDate, getLocaleDateFormat, getLocaleId } from "@angu
 import { AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, EventEmitter, Input, LOCALE_ID, OnDestroy, OnInit, Output, QueryList, TemplateRef, TrackByFunction, ViewChildren, inject, isDevMode } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { ActivatedRoute, Router } from "@angular/router";
-import { BandwidthChartResult, ChartResult, Condition, Database, FeatureID, GreaterOrEqual, IPScope, LessOrEqual, Netquery, NetqueryConnection, OrderBy, Pin, PossilbeValue, Query, QueryResult, SPNService, Select, Verdict } from "@safing/portmaster-api";
+import { BandwidthChartResult, ChartResult, Condition, Database, GreaterOrEqual, IPScope, LessOrEqual, Netquery, NetqueryConnection, OrderBy, Pin, PossilbeValue, Query, QueryResult, Select, Verdict } from "@safing/portmaster-api";
 import { Datasource, DynamicItemsPaginator, SelectOption } from "@safing/ui";
 import { BehaviorSubject, Observable, Subject, combineLatest, forkJoin, interval, merge, of, timer } from "rxjs";
 import { catchError, filter, map, share, skip, startWith, switchMap, take, takeUntil } from "rxjs/operators";
@@ -318,27 +318,9 @@ export class SfngNetqueryViewer implements OnInit, OnDestroy, AfterViewInit {
   }
 
   // whether or not the current use has the history feature available.
-  canUseHistory$ = inject(SPNService).profile$
-    .pipe(
-      map(profile => {
-        if (!profile) {
-          return false;
-        }
+  canUseHistory$ = of(true);
 
-        return profile.current_plan?.feature_ids?.includes(FeatureID.History) || false;
-      })
-    );
-
-  featureBw$ = inject(SPNService).profile$
-    .pipe(
-      map(profile => {
-        if (!profile) {
-          return false;
-        }
-
-        return profile.current_plan?.feature_ids?.includes(FeatureID.Bandwidth) || false;
-      })
-    );
+  featureBw$ = of(true);
 
   trackPageItem: TrackByFunction<LocalQueryResult> = (_, r) => {
     if (this.groupByKeys?.length) {

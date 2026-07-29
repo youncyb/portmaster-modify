@@ -226,6 +226,15 @@ export type ProfileBandwidthChartResult = BandwidthChartResult<'profile'>;
 
 export type ConnectionBandwidthChartResult = BandwidthChartResult<'id'>;
 
+export type AppBandwidthPeriod = 'day' | 'week' | 'month';
+
+export interface AppBandwidthBarRow {
+  profile: string;
+  profile_name: string;
+  incoming: number;
+  outgoing: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class Netquery {
   constructor(
@@ -291,6 +300,16 @@ export class Netquery {
     })
       .pipe(
         map(response => response.results),
+      )
+  }
+
+  appBandwidthChart(period: AppBandwidthPeriod = 'day', limit: number = 20): Observable<AppBandwidthBarRow[]> {
+    return this.http.post<{ results: AppBandwidthBarRow[] }>(`${this.httpAPI}/v1/netquery/charts/bandwidth-app`, {
+      period,
+      limit,
+    })
+      .pipe(
+        map(response => response.results || []),
       )
   }
 

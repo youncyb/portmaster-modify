@@ -978,6 +978,7 @@ func updateBandwidth(ctx context.Context, bwUpdate *packet.BandwidthUpdate) {
 			ctx,
 			conn.HistoryEnabled,
 			fmt.Sprintf("%s/%s", conn.ProcessContext.Source, conn.ProcessContext.Profile),
+			conn.ProcessContext.ProfileName,
 			conn.Process().GetKey(),
 			conn.ID,
 			bytesIn,

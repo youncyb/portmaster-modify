@@ -225,6 +225,32 @@
     </span>
   </app-dashboard-widget>
 
+  <app-dashboard-widget class="flex-grow" id="bwvis-app-period" style="min-height: 420px" label="App Bandwidth by Period">
+    <div *ngIf="featureBw" class="flex flex-col w-full h-full gap-2">
+      <div class="flex flex-row items-center gap-1">
+        <button *ngFor="let p of appBandwidthPeriods"
+          type="button"
+          class="px-2 py-0.5 text-xxs rounded border transition-colors"
+          [class.bg-gray-300]="appBandwidthPeriod === p.id"
+          [class.text-primary]="appBandwidthPeriod === p.id"
+          [class.border-gray-400]="appBandwidthPeriod === p.id"
+          [class.text-secondary]="appBandwidthPeriod !== p.id"
+          [class.border-transparent]="appBandwidthPeriod !== p.id"
+          (click)="setAppBandwidthPeriod(p.id)">
+          {{ p.label }}
+        </button>
+      </div>
+
+      <sfng-netquery-app-bandwidth-bar class="block flex-grow w-full min-h-0" [data]="appBandwidthData">
+      </sfng-netquery-app-bandwidth-bar>
+    </div>
+
+    <span *ngIf="!featureBw"
+      class="!text-xxs !font-light !text-tertiary !text-opacity-50 w-full text-center !leading-3">
+      Available in Portmaster Plus
+    </span>
+  </app-dashboard-widget>
+
   <app-dashboard-widget class="flex-grow relative" id="news" label="News">
 
     <div class="flex flex-col items-center justify-center w-full h-full gap-2 font-light" *ngIf="!news">

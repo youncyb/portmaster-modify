@@ -65,12 +65,11 @@ var (
 			`,
 		},
 		{
-			Name:              "Network History",
-			ID:                string(account.FeatureHistory),
-			RequiredFeatureID: account.FeatureHistory,
-			ConfigKey:         "history/enable",
-			ConfigScope:       "history/",
-			InPackage:         packagePlus,
+			Name:        "Network History",
+			ID:          string(account.FeatureHistory),
+			ConfigKey:   "history/enable",
+			ConfigScope: "history/",
+			InPackage:   packageFree,
 			icon: `
 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
   <path stroke-linecap="round" stroke-linejoin="round"
@@ -79,11 +78,10 @@ var (
 			`,
 		},
 		{
-			Name:              "Bandwidth Visibility",
-			ID:                string(account.FeatureBWVis),
-			RequiredFeatureID: account.FeatureBWVis,
-			InPackage:         packagePlus,
-			Beta:              true,
+			Name:      "Bandwidth Visibility",
+			ID:        string(account.FeatureBWVis),
+			InPackage: packageFree,
+			Beta:      true,
 			icon: `
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
       <path stroke-linecap="round" stroke-linejoin="round"
