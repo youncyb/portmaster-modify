@@ -23,6 +23,8 @@
 - **Recent Top Consumers**：按应用汇总收/发流量（环形图）
 - **Recent Bandwidth Usage**：近期总带宽时序（折线图）
 
+![Recent Top Consumers 与 Recent Bandwidth Usage](docs/images/mod-recent-bandwidth.png)
+
 ### 3. Dashboard：按日 / 周 / 月的应用流量统计（新增）
 
 新增 **App Bandwidth by Period**：
@@ -32,6 +34,8 @@
 - 按应用横向柱状图（绿=下载，蓝=上传）
 - 显示应用图标与名称
 - 数据持久化在本地 `history.bandwidth_app_daily`（`history.db`）
+
+![App Bandwidth by Period（日/周/月）](docs/images/mod-app-bandwidth-period.png)
 
 ### 4. 联网 Prompt 通知更易识别
 
