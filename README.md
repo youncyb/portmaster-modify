@@ -62,6 +62,83 @@ git checkout modify && git merge development
 git checkout main && git merge modify
 ```
 
+### 6. Windows 本机精简打包与安装
+
+官方完整发布依赖 Earthly/Docker 多平台构建与安装器流水线。本修改版日常迭代更适合 **精简打包**：只重编 **Core + UI**，覆盖已安装目录中的两个文件即可验证功能（与本仓库开发时的替换方式一致）。
+
+#### 背景说明
+
+| 组件 | 文件 | 是否需要自编 |
+|------|------|----------------|
+| 核心服务 | `portmaster-core.exe` | **是**（Go） |
+| Web UI | `portmaster.zip` | **是**（Angular） |
+| 桌面壳 | `portmaster.exe` | 否（可用现有安装） |
+| 驱动 / DLL | `portmaster-kext.sys`、`portmaster-core.dll` 等 | 否（沿用官方二进制） |
+
+- UI 由 Core 从同目录的 `portmaster.zip` 加载。  
+- 日/周/月流量等数据写在本机数据目录（如 `C:\ProgramData\Portmaster\databases\history.db`），与打包方式无关。  
+- 精简包 **不是** 官方 NSIS/MSI 安装器；分发时请标明非官方修改版。
+
+#### 一键脚本
+
+脚本路径：
+
+```text
+packaging/windows/dev_helpers/build_local_package.ps1
+```
+
+依赖：已安装 **Go**、**Node.js/npm**；使用 `-Install` 时需管理员权限（UAC）。
+
+```powershell
+cd packaging\windows\dev_helpers
+
+# 仅编译打包（production UI）
+.\build_local_package.ps1
+
+# 开发配置 UI + npm 代理
+.\build_local_package.ps1 -Development -Proxy http://127.0.0.1:1086
+
+# 编译并安装到本机（默认 D:\app\Portmaster，会弹 UAC）
+.\build_local_package.ps1 -Install -InstallDir "D:\app\Portmaster"
+
+# 已有产物，只重新安装
+.\build_local_package.ps1 -SkipCore -SkipUI -Install
+```
+
+常用参数：
+
+| 参数 | 说明 |
+|------|------|
+| `-Development` / `-d` | UI 使用 development 配置 |
+| `-Proxy <url>` | npm 使用 HTTP 代理 |
+| `-GoProxy <url>` | 默认 `https://goproxy.cn,direct` |
+| `-SkipNpmInstall` | 跳过 `npm install` |
+| `-SkipCore` / `-SkipUI` | 跳过对应编译 |
+| `-Install` | 停止服务、备份、替换、重启 `PortmasterCore` |
+| `-InstallDir` | 安装目录，默认 `D:\app\Portmaster` |
+| `-NoBackup` | 安装时不备份旧文件 |
+
+#### 产物
+
+```text
+packaging/windows/dev_helpers/dist/local-package/
+  portmaster-core.exe
+  portmaster.zip
+  REPLACE.txt
+```
+
+#### 手动替换步骤（不用 `-Install` 时）
+
+1. 停止服务 `PortmasterCore`，并退出桌面端 `portmaster.exe`  
+2. 备份安装目录中的 `portmaster-core.exe`、`portmaster.zip`  
+3. 将产物复制到安装目录（示例：`D:\app\Portmaster\`）  
+4. 启动服务 `PortmasterCore`  
+5. **完全退出后重新打开** 桌面端（仅刷新页面可能仍是旧 UI）
+
+#### 与官方完整打包的关系
+
+若需要 `.exe`/`.msi` 安装包，请参考仓库 `packaging/README.md` 与 `earthly +release-prep` 流程（通常需 Linux + Docker/Earthly，再在 Windows 上生成安装器）。精简脚本 **不替代** 该流程。
+
 ---
 
 # Get Peace of Mind <br> with [Easy Privacy](https://safing.io/)
