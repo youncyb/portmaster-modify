@@ -1,3 +1,65 @@
+# Portmaster Modify
+
+> **说明**：本仓库是 [Safing/Portmaster](https://github.com/safing/portmaster) 的 **非官方修改版**（fork），在 GPL-3.0 下发布。  
+> 与官方无隶属关系；商标与品牌归 Safing 所有。SPN 等云端付费服务仍以官方账号/套餐为准。
+
+基于上游 Portmaster，本修改版主要调整如下。
+
+## 本仓库修改说明
+
+### 1. 免费启用原 Plus 能力（本地功能）
+
+无需登录 Safing 账号、无需 Plus 套餐即可使用：
+
+| 功能 | 官方 | 本修改版 |
+|------|------|----------|
+| **Bandwidth Visibility**（带宽可视） | Plus（`bw-vis`） | 默认可用 |
+| **Network History**（网络历史） | Plus（`history`） | 默认可用（仍尊重应用内「启用历史」开关） |
+
+> SPN 等依赖官方网络与订阅的功能 **未** 解锁。
+
+### 2. Dashboard：近期带宽可视
+
+- **Recent Top Consumers**：按应用汇总收/发流量（环形图）
+- **Recent Bandwidth Usage**：近期总带宽时序（折线图）
+
+### 3. Dashboard：按日 / 周 / 月的应用流量统计（新增）
+
+新增 **App Bandwidth by Period**：
+
+- 切换 **Day / Week / Month**
+- 周期内 **总下载 / 总上传 / 合计**
+- 按应用横向柱状图（绿=下载，蓝=上传）
+- 显示应用图标与名称
+- 数据持久化在本地 `history.bandwidth_app_daily`（`history.db`）
+
+### 4. 联网 Prompt 通知更易识别
+
+系统通知（Windows toast）调整：
+
+- **标题**：应用名称（不再固定为 “Connection Prompt”）
+- **正文**：精简可执行路径 + 目标（如 `父目录\程序.exe → example.com`）
+- 路径过长时自动缩短，兼顾通知栏长度
+
+### 5. 分支说明（本 fork）
+
+| 分支 | 用途 |
+|------|------|
+| `development` | 跟踪官方干净基线 |
+| `modify` | 仅包含本仓库改动 |
+| `main` | 官方基线 + 本仓库改动（默认发布分支） |
+
+同步上游示例：
+
+```bash
+git fetch origin
+git checkout development && git merge origin/development
+git checkout modify && git merge development
+git checkout main && git merge modify
+```
+
+---
+
 # Get Peace of Mind <br> with [Easy Privacy](https://safing.io/)
 
 Portmaster is a free and open-source application firewall that does the heavy lifting for you.
@@ -28,8 +90,8 @@ _seen on:_
 3. Automatically Block Trackers & Malware
 4. Set Global & Per‑App Settings
 5. Secure DNS (Doh/DoT)
-6. Record and Search Network Activity ([$](https://safing.io/pricing/))
-7. Per-App Bandwidth Usage ([$](https://safing.io/pricing/))
+6. Record and Search Network Activity（本修改版默认可用；官方为 [$](https://safing.io/pricing/)）
+7. Per-App Bandwidth Usage（本修改版默认可用，并增强日/周/月统计；官方为 [$](https://safing.io/pricing/)）
 8. [SPN, our Next-Gen Privacy Network](https://safing.io/spn/) ([$$](https://safing.io/pricing/))
 
 # Technical Introduction
