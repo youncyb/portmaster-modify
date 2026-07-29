@@ -715,8 +715,21 @@ type AppBandwidthRow struct {
 	Outgoing    int64  `json:"outgoing" sqlite:"outgoing"`
 }
 
-// QueryAppBandwidthByPeriod returns per-app upload/download totals for the given period.
-func (db *Database) QueryAppBandwidthByPeriod(ctx context.Context, period AppBandwidthPeriod, limit int) ([]AppBandwidthRow, error) {
+// AppBandwidthTotals is the period-wide upload/download total across all apps.
+type AppBandwidthTotals struct {
+	Incoming int64 `json:"incoming" sqlite:"incoming"`
+	Outgoing int64 `json:"outgoing" sqlite:"outgoing"`
+}
+
+// AppBandwidthPeriodResult holds top apps plus full-period totals.
+type AppBandwidthPeriodResult struct {
+	Rows   []AppBandwidthRow  `json:"results"`
+	Totals AppBandwidthTotals `json:"totals"`
+}
+
+// QueryAppBandwidthByPeriod returns per-app upload/download totals for the given period
+// and period-wide totals across all apps (not limited to the top-N rows).
+func (db *Database) QueryAppBandwidthByPeriod(ctx context.Context, period AppBandwidthPeriod, limit int) (*AppBandwidthPeriodResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -738,6 +751,21 @@ func (db *Database) QueryAppBandwidthByPeriod(ctx context.Context, period AppBan
 		return nil, fmt.Errorf("unsupported period %q", period)
 	}
 
+	args := map[string]any{
+		":from": from,
+		":to":   to,
+	}
+
+	var totals []AppBandwidthTotals
+	if err := db.Execute(ctx, `
+		SELECT COALESCE(SUM(incoming), 0) AS incoming,
+			COALESCE(SUM(outgoing), 0) AS outgoing
+		FROM history.bandwidth_app_daily
+		WHERE day >= :from AND day <= :to
+	`, orm.WithNamedArgs(args), orm.WithResult(&totals)); err != nil {
+		return nil, err
+	}
+
 	query := `SELECT profile,
 		MAX(profile_name) AS profile_name,
 		SUM(incoming) AS incoming,
@@ -749,18 +777,25 @@ func (db *Database) QueryAppBandwidthByPeriod(ctx context.Context, period AppBan
 	ORDER BY (SUM(incoming) + SUM(outgoing)) DESC
 	LIMIT :limit`
 
+	args[":limit"] = limit
 	var result []AppBandwidthRow
 	if err := db.Execute(ctx, query,
-		orm.WithNamedArgs(map[string]any{
-			":from":  from,
-			":to":    to,
-			":limit": limit,
-		}),
+		orm.WithNamedArgs(args),
 		orm.WithResult(&result),
 	); err != nil {
 		return nil, err
 	}
-	return result, nil
+	if result == nil {
+		result = []AppBandwidthRow{}
+	}
+
+	out := &AppBandwidthPeriodResult{
+		Rows: result,
+	}
+	if len(totals) > 0 {
+		out.Totals = totals[0]
+	}
+	return out, nil
 }
 
 // Save inserts the connection conn into the SQLite database. If conn

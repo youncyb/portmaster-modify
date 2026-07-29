@@ -39,7 +39,10 @@ func (ch *AppBandwidthChartHandler) ServeHTTP(resp http.ResponseWriter, req *htt
 		return
 	}
 	if result == nil {
-		result = []AppBandwidthRow{}
+		result = &AppBandwidthPeriodResult{Rows: []AppBandwidthRow{}}
+	}
+	if result.Rows == nil {
+		result.Rows = []AppBandwidthRow{}
 	}
 
 	resp.WriteHeader(http.StatusOK)
@@ -47,7 +50,8 @@ func (ch *AppBandwidthChartHandler) ServeHTTP(resp http.ResponseWriter, req *htt
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(map[string]interface{}{ //nolint:errchkjson
-		"results": result,
+		"results": result.Rows,
+		"totals":  result.Totals,
 		"period":  period,
 	})
 }

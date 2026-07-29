@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
-import { AppBandwidthBarRow } from '@safing/portmaster-api';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input, inject } from '@angular/core';
+import { AppBandwidthBarRow, AppBandwidthTotals } from '@safing/portmaster-api';
 
 interface PreparedRow extends AppBandwidthBarRow {
   label: string;
@@ -15,12 +15,28 @@ interface PreparedRow extends AppBandwidthBarRow {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SfngNetqueryAppBandwidthBarComponent {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   prepared: PreparedRow[] = [];
+  totals: AppBandwidthTotals = { incoming: 0, outgoing: 0 };
   maxTotal = 1;
 
   @Input()
   set data(value: AppBandwidthBarRow[] | null | undefined) {
-    const rows = (value || [])
+    this.applyRows(value || []);
+  }
+
+  @Input()
+  set periodTotals(value: AppBandwidthTotals | null | undefined) {
+    this.totals = {
+      incoming: Number(value?.incoming) || 0,
+      outgoing: Number(value?.outgoing) || 0,
+    };
+    this.cdr.markForCheck();
+  }
+
+  private applyRows(value: AppBandwidthBarRow[]) {
+    const rows = value
       .map((row) => {
         const incoming = Number(row.incoming) || 0;
         const outgoing = Number(row.outgoing) || 0;
@@ -37,11 +53,17 @@ export class SfngNetqueryAppBandwidthBarComponent {
       .filter((row) => row.total > 0)
       .sort((a, b) => b.total - a.total);
 
+    const maxDir = Math.max(
+      1,
+      ...rows.map((r) => r.incoming),
+      ...rows.map((r) => r.outgoing),
+    );
     this.maxTotal = Math.max(1, ...rows.map((r) => r.total));
     this.prepared = rows.map((row) => ({
       ...row,
-      incomingPct: (row.incoming / this.maxTotal) * 100,
-      outgoingPct: (row.outgoing / this.maxTotal) * 100,
+      incomingPct: Math.max(row.incoming > 0 ? 2 : 0, (row.incoming / maxDir) * 100),
+      outgoingPct: Math.max(row.outgoing > 0 ? 2 : 0, (row.outgoing / maxDir) * 100),
     }));
+    this.cdr.markForCheck();
   }
 }

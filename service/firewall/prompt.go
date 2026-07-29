@@ -3,8 +3,11 @@ package firewall
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/safing/portmaster/base/log"
 	"github.com/safing/portmaster/base/notifications"
@@ -174,11 +177,20 @@ func createPrompt(ctx context.Context, conn *network.Connection) (n *notificatio
 	entity := conn.Entity
 	// Also needed: localProfile
 
+	// Get name of profile for notification. The profile is read-locked by the firewall handler.
+	profileName := localProfile.Name
+	processPath := ""
+	if proc := conn.Process(); proc != nil {
+		processPath = proc.Path
+	}
+	pathHint := shortenProcessPathForPrompt(processPath, 48)
+
 	// Create new notification.
+	// Title uses the app name so system toasts identify the app at a glance.
 	n = &notifications.Notification{
 		EventID:      nID,
 		Type:         notifications.Prompt,
-		Title:        "Connection Prompt",
+		Title:        profileName,
 		Category:     "Privacy Filter",
 		ShowOnSystem: askWithSystemNotifications(),
 		EventData: &promptData{
@@ -188,7 +200,7 @@ func createPrompt(ctx context.Context, conn *network.Connection) (n *notificatio
 				ID:     localProfile.ID,
 				// LinkedPath is used to enhance the display of the prompt in the UI.
 				// TODO: Using the process path is a workaround. Find a cleaner solution.
-				LinkedPath: conn.Process().Path,
+				LinkedPath: processPath,
 			},
 		},
 		Expires: expires,
@@ -203,13 +215,12 @@ func createPrompt(ctx context.Context, conn *network.Connection) (n *notificatio
 		)
 	})
 
-	// Get name of profile for notification. The profile is read-locked by the firewall handler.
-	profileName := localProfile.Name
-
-	// add message and actions
+	// Message keeps path + target short for fixed-length system notification bars.
+	// Format: "<short path> → <target>" or falls back to name when path is unavailable.
 	switch {
 	case conn.Inbound:
-		n.Message = fmt.Sprintf("%s wants to accept connections from %s (%d/%d)", profileName, conn.Entity.IP.String(), conn.Entity.Protocol, conn.Entity.Port)
+		target := fmt.Sprintf("%s (%d/%d)", conn.Entity.IP.String(), conn.Entity.Protocol, conn.Entity.Port)
+		n.Message = formatPromptMessage(profileName, pathHint, "accept from", target)
 		n.AvailableActions = []*notifications.Action{
 			{
 				ID:   allowServingIP,
@@ -221,7 +232,8 @@ func createPrompt(ctx context.Context, conn *network.Connection) (n *notificatio
 			},
 		}
 	case conn.Entity.Domain == "": // direct connection
-		n.Message = fmt.Sprintf("%s wants to connect to %s (%d/%d)", profileName, conn.Entity.IP.String(), conn.Entity.Protocol, conn.Entity.Port)
+		target := fmt.Sprintf("%s (%d/%d)", conn.Entity.IP.String(), conn.Entity.Protocol, conn.Entity.Port)
+		n.Message = formatPromptMessage(profileName, pathHint, "connect to", target)
 		n.AvailableActions = []*notifications.Action{
 			{
 				ID:   allowIP,
@@ -233,7 +245,7 @@ func createPrompt(ctx context.Context, conn *network.Connection) (n *notificatio
 			},
 		}
 	default: // connection to domain
-		n.Message = fmt.Sprintf("%s wants to connect to %s", profileName, conn.Entity.Domain)
+		n.Message = formatPromptMessage(profileName, pathHint, "connect to", conn.Entity.Domain)
 		n.AvailableActions = []*notifications.Action{
 			{
 				ID:   allowDomainAll,
@@ -324,4 +336,82 @@ func saveResponse(p *profile.Profile, entity *intel.Entity, promptResponse strin
 	}
 
 	return nil
+}
+
+// formatPromptMessage builds a compact notification body for system toasts.
+// Title already carries the app name; body prioritizes path + destination.
+func formatPromptMessage(profileName, pathHint, action, target string) string {
+	const maxLen = 120
+
+	arrow := "→"
+	if strings.Contains(action, "accept") {
+		arrow = "←"
+	}
+
+	var msg string
+	switch {
+	case pathHint != "":
+		// Example: "Clash\mihomo.exe → api.github.com"
+		msg = fmt.Sprintf("%s %s %s", pathHint, arrow, target)
+	default:
+		msg = fmt.Sprintf("%s wants to %s %s", profileName, action, target)
+	}
+
+	return truncateRunes(msg, maxLen)
+}
+
+// shortenProcessPathForPrompt reduces a full executable path for toast display.
+// Prefers "parent\file.exe"; falls back to filename; truncates middle if needed.
+func shortenProcessPathForPrompt(path string, maxLen int) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if maxLen <= 0 {
+		maxLen = 48
+	}
+
+	// Clean separators for display consistency on Windows.
+	clean := filepath.Clean(path)
+	base := filepath.Base(clean)
+	parent := filepath.Base(filepath.Dir(clean))
+
+	short := base
+	if parent != "" && parent != "." && parent != string(filepath.Separator) {
+		short = parent + string(filepath.Separator) + base
+	}
+
+	// Keep full path only when it already fits.
+	if utf8.RuneCountInString(clean) <= maxLen {
+		return clean
+	}
+	if utf8.RuneCountInString(short) <= maxLen {
+		return short
+	}
+	return truncateMiddleRunes(short, maxLen)
+}
+
+func truncateRunes(s string, maxLen int) string {
+	if maxLen <= 0 || utf8.RuneCountInString(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 1 {
+		return "…"
+	}
+	runes := []rune(s)
+	return string(runes[:maxLen-1]) + "…"
+}
+
+func truncateMiddleRunes(s string, maxLen int) string {
+	if maxLen <= 0 || utf8.RuneCountInString(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return truncateRunes(s, maxLen)
+	}
+	runes := []rune(s)
+	keep := maxLen - 1 // room for ellipsis
+	left := keep / 2
+	right := keep - left
+	return string(runes[:left]) + "…" + string(runes[len(runes)-right:])
 }

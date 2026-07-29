@@ -241,7 +241,10 @@
         </button>
       </div>
 
-      <sfng-netquery-app-bandwidth-bar class="block flex-grow w-full min-h-0" [data]="appBandwidthData">
+      <sfng-netquery-app-bandwidth-bar
+        class="block flex-grow w-full min-h-0"
+        [data]="appBandwidthData"
+        [periodTotals]="appBandwidthTotals">
       </sfng-netquery-app-bandwidth-bar>
     </div>
 

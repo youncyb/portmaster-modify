@@ -235,6 +235,17 @@ export interface AppBandwidthBarRow {
   outgoing: number;
 }
 
+export interface AppBandwidthTotals {
+  incoming: number;
+  outgoing: number;
+}
+
+export interface AppBandwidthChartResponse {
+  results: AppBandwidthBarRow[];
+  totals: AppBandwidthTotals;
+  period: AppBandwidthPeriod;
+}
+
 @Injectable({ providedIn: 'root' })
 export class Netquery {
   constructor(
@@ -303,13 +314,17 @@ export class Netquery {
       )
   }
 
-  appBandwidthChart(period: AppBandwidthPeriod = 'day', limit: number = 20): Observable<AppBandwidthBarRow[]> {
-    return this.http.post<{ results: AppBandwidthBarRow[] }>(`${this.httpAPI}/v1/netquery/charts/bandwidth-app`, {
+  appBandwidthChart(period: AppBandwidthPeriod = 'day', limit: number = 20): Observable<AppBandwidthChartResponse> {
+    return this.http.post<AppBandwidthChartResponse>(`${this.httpAPI}/v1/netquery/charts/bandwidth-app`, {
       period,
       limit,
     })
       .pipe(
-        map(response => response.results || []),
+        map(response => ({
+          results: response?.results || [],
+          totals: response?.totals || { incoming: 0, outgoing: 0 },
+          period: response?.period || period,
+        })),
       )
   }
 

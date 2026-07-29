@@ -1,7 +1,7 @@
 import { KeyValue } from "@angular/common";
 import { AfterContentInit, AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, ElementRef, OnInit, QueryList, TrackByFunction, ViewChild, ViewChildren, forwardRef, inject } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
-import { AppBandwidthBarRow, AppBandwidthPeriod, AppProfileService, BandwidthChartResult, ChartResult, Database, FeatureID, Netquery, PortapiService, SPNService, UserProfile, Verdict } from "@safing/portmaster-api";
+import { AppBandwidthBarRow, AppBandwidthPeriod, AppBandwidthTotals, AppProfileService, BandwidthChartResult, ChartResult, Database, FeatureID, Netquery, PortapiService, SPNService, UserProfile, Verdict } from "@safing/portmaster-api";
 import { SfngDialogService, SfngTabGroupComponent } from "@safing/ui";
 import { BehaviorSubject, Observable, catchError, filter, interval, map, of, repeat, retry, startWith, switchMap, throwError } from "rxjs";
 import { ActionIndicatorService } from 'src/app/shared/action-indicator';
@@ -90,6 +90,7 @@ export class DashboardPageComponent implements OnInit, AfterViewInit {
     { id: 'month', label: 'Month' },
   ];
   appBandwidthData: AppBandwidthBarRow[] = [];
+  appBandwidthTotals: AppBandwidthTotals = { incoming: 0, outgoing: 0 };
   private readonly appBandwidthReload$ = new BehaviorSubject<void>(undefined);
 
   readonly bandwidthBarConfig: CircularBarChartConfig<BandwidthBarData> = {
@@ -457,12 +458,17 @@ export class DashboardPageComponent implements OnInit, AfterViewInit {
       .pipe(
         switchMap(() => interval(15000).pipe(startWith(0))),
         switchMap(() => this.netquery.appBandwidthChart(this.appBandwidthPeriod, 20).pipe(
-          catchError(() => of([] as AppBandwidthBarRow[])),
+          catchError(() => of({
+            results: [] as AppBandwidthBarRow[],
+            totals: { incoming: 0, outgoing: 0 },
+            period: this.appBandwidthPeriod,
+          })),
         )),
         takeUntilDestroyed(this.destroyRef),
       )
-      .subscribe((rows) => {
-        this.appBandwidthData = rows || [];
+      .subscribe((response) => {
+        this.appBandwidthData = response?.results || [];
+        this.appBandwidthTotals = response?.totals || { incoming: 0, outgoing: 0 };
         this.cdr.markForCheck();
       });
 
