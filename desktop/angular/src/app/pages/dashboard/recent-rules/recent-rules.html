@@ -1,0 +1,88 @@
+<div class="recent-rules">
+  <div class="hint text-xxs text-secondary">
+    Shows rules from recently edited apps (profile last-save time).
+    <strong>Prompt</strong> removes the explicit rule so the app default action can ask again.
+  </div>
+
+  <div *ngIf="loading" class="empty">Loading rules…</div>
+  <div *ngIf="!loading && !rows.length" class="empty">No per-app connection rules yet.</div>
+
+  <div class="table-head" *ngIf="rows.length">
+    <span>App</span>
+    <span>Dir</span>
+    <span>Action</span>
+    <span>Host / Entity</span>
+    <span>Edited</span>
+    <span></span>
+  </div>
+
+  <div class="rows" *ngIf="rows.length">
+    <div class="row" *ngFor="let row of rows; trackBy: trackRow"
+      [class.editing]="editing?.id === row.id">
+      <div class="cell app" (click)="openApp(row)" [title]="row.profileKey">
+        <app-icon [profile]="row.profileKey"></app-icon>
+        <span class="name">{{ row.profileName }}</span>
+      </div>
+      <div class="cell dir">
+        <span class="badge">{{ row.direction === 'out' ? 'Out' : 'In' }}</span>
+      </div>
+      <div class="cell action">
+        <span class="badge" [class.allow]="row.action === 'allow'" [class.block]="row.action === 'block'">
+          {{ row.action === 'allow' ? 'Allow' : 'Block' }}
+        </span>
+      </div>
+      <div class="cell entity" [title]="row.rule">{{ row.entity }}</div>
+      <div class="cell time text-xxs text-secondary">
+        {{ row.lastEdited * 1000 | date:'MM-dd HH:mm' }}
+      </div>
+      <div class="cell ops">
+        <button type="button" class="link-btn" (click)="startEdit(row)">Edit</button>
+        <button type="button" class="link-btn danger" (click)="deleteRule(row)">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Editor panel -->
+  <div class="editor" *ngIf="editing">
+    <div class="editor-title">
+      Edit rule · {{ editing.profileName }}
+      <span class="badge">{{ editing.direction === 'out' ? 'Outgoing' : 'Incoming' }}</span>
+    </div>
+
+    <div class="editor-grid">
+      <label>Action</label>
+      <div class="actions">
+        <button type="button" [class.active]="editAction === 'allow'" (click)="editAction = 'allow'">Allow</button>
+        <button type="button" [class.active]="editAction === 'block'" (click)="editAction = 'block'">Block</button>
+        <button type="button" [class.active]="editAction === 'prompt'" (click)="editAction = 'prompt'">Prompt</button>
+      </div>
+
+      <label>Host / Entity</label>
+      <div class="entity-edit">
+        <input type="text" [(ngModel)]="editEntity" [disabled]="editAction === 'prompt'"
+          placeholder="e.g. example.com  |  .example.com  |  *.cdn.com  |  10.0.0.0/8"
+          (keydown.enter)="saveEdit()" />
+        <div class="quick" *ngIf="editAction !== 'prompt'">
+          <button type="button" (click)="applyExactDomain()">Exact domain</button>
+          <button type="button" (click)="applyZoneDomain()">Zone (.domain)</button>
+          <button type="button" (click)="applyPrefixWildcard()">name.*</button>
+        </div>
+        <div class="help text-xxs text-secondary" *ngIf="editAction === 'prompt'">
+          Prompt removes this rule. Traffic then follows the app’s default network action (often Ask).
+        </div>
+        <div class="help text-xxs text-secondary" *ngIf="editAction !== 'prompt'">
+          Syntax: <code>.example.com</code> = domain + subdomains ·
+          <code>*cdn*</code> = contains · IP/CIDR/LAN supported.
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-ops">
+      <button type="button" class="btn primary" [disabled]="saving" (click)="saveEdit()">
+        {{ saving ? 'Saving…' : 'Save' }}
+      </button>
+      <button type="button" class="btn" [disabled]="saving" (click)="cancelEdit()">Cancel</button>
+      <button type="button" class="btn ghost" (click)="openApp(editing)">Open app settings</button>
+    </div>
+  </div>
+</div>

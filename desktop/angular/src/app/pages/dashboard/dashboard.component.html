@@ -225,6 +225,10 @@
     </span>
   </app-dashboard-widget>
 
+  <app-dashboard-widget class="flex-grow" id="recent-rules" style="min-height: 420px" label="Recent App Connection Rules">
+    <app-recent-rules class="block w-full h-full"></app-recent-rules>
+  </app-dashboard-widget>
+
   <app-dashboard-widget class="flex-grow" id="bwvis-app-period" style="min-height: 420px" label="App Bandwidth by Period">
     <div *ngIf="featureBw" class="flex flex-col w-full h-full gap-2">
       <div class="flex flex-row items-center gap-1">

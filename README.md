@@ -45,7 +45,17 @@
 - **正文**：精简可执行路径 + 目标（如 `父目录\程序.exe → example.com`）
 - 路径过长时自动缩短，兼顾通知栏长度
 
-### 5. 分支说明（本 fork）
+### 5. Dashboard：最近应用连接规则（新增）
+
+新增 **Recent App Connection Rules**：
+
+- 展示各应用最近编辑过的出站/入站规则（Allow / Block）
+- 可就地编辑主机（域名/IP/通配符等）与动作
+- 快捷：Exact domain、Zone（`.domain` 含子域）、`name.*`
+- **Prompt**：删除该条明确规则，使流量回落到应用默认动作（常为 Ask）
+- 引擎层规则本身只有 Allow/Block；Prompt 不是第三条规则类型
+
+### 6. 分支说明（本 fork）
 
 | 分支 | 用途 |
 |------|------|
@@ -62,7 +72,7 @@ git checkout modify && git merge development
 git checkout main && git merge modify
 ```
 
-### 6. Windows 本机精简打包与安装
+### 7. Windows 本机精简打包与安装
 
 官方完整发布依赖 Earthly/Docker 多平台构建与安装器流水线。本修改版日常迭代更适合 **精简打包**：只重编 **Core + UI**，覆盖已安装目录中的两个文件即可验证功能（与本仓库开发时的替换方式一致）。
 

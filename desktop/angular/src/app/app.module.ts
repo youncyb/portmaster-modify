@@ -31,6 +31,7 @@ import { QuickSettingSelectExitButtonComponent } from './pages/app-view/qs-selec
 import { QuickSettingUseSPNButtonComponent } from './pages/app-view/qs-use-spn/qs-use-spn';
 import { QuickSettingUseSplitTunButtonComponent } from './pages/app-view/qs-use-splittun/qs-use-splittun';
 import { DashboardPageComponent } from './pages/dashboard/dashboard.component';
+import { RecentRulesComponent } from './pages/dashboard/recent-rules/recent-rules';
 import { FeatureCardComponent } from './pages/dashboard/feature-card/feature-card.component';
 import { MonitorPageComponent } from './pages/monitor';
 import { SettingsComponent } from './pages/settings/settings';
@@ -158,6 +159,7 @@ const localeConfig = {
     QsHistoryComponent,
     DashboardPageComponent,
     DashboardWidgetComponent,
+    RecentRulesComponent,
     FeatureCardComponent,
     MergeProfileDialogComponent,
     AppInsightsComponent,

@@ -19,6 +19,7 @@
     "blocked blocked countries countries"
     "map map map map"
     "bwvis-bar bwvis-bar bwvis-line bwvis-line"
+    "recent-rules recent-rules recent-rules recent-rules"
     "bwvis-app bwvis-app bwvis-app bwvis-app";
 }
 
@@ -34,6 +35,7 @@
       "countries countries map map"
       "blocked blocked map map"
       "bwvis-bar bwvis-bar bwvis-line bwvis-line"
+      "recent-rules recent-rules recent-rules recent-rules"
       "bwvis-app bwvis-app bwvis-app bwvis-app";
   }
 }
@@ -76,6 +78,10 @@
 
 #bwvis-app-period {
   grid-area: bwvis-app;
+}
+
+#recent-rules {
+  grid-area: recent-rules;
 }
 
 #news {
