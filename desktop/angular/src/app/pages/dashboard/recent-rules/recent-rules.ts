@@ -14,8 +14,11 @@ import { ActionIndicatorService } from 'src/app/shared/action-indicator';
 export type RuleDirection = 'out' | 'in';
 export type RuleAction = 'allow' | 'block' | 'prompt';
 
-/** Marker stored in rule comments: + host # pm:ts=1710000000 */
-export const RULE_TS_PREFIX = 'pm:ts=';
+/**
+ * Per-rule edit timestamps stored as a JSON string on the profile.
+ * Using a string avoids hierarchical Config flattening treating the map as nested settings.
+ */
+export const RULE_EDIT_TIMES_KEY = 'filter/ruleEditTimesJson';
 
 export interface RecentRuleRow {
   id: string;
@@ -170,19 +173,31 @@ export class RecentRulesComponent implements OnInit {
 
       const at = idx >= 0 ? idx : target.ruleIndex;
       const now = Math.floor(Date.now() / 1000);
+      const times = { ...(readRuleEditTimes(updated) || {}) };
+
+      // Drop timestamp for the old rule identity.
+      delete times[ruleTimeKey(target.configKey, target.action, target.entity)];
 
       if (action === 'prompt') {
         rules.splice(at, 1);
       } else {
         const prefix = action === 'block' ? '-' : '+';
-        const prevComment = parseEndpointRule(rules[at] || '')?.comment || target.comment || '';
-        const newRule = formatEndpointRule(prefix, entity, prevComment, now);
+        // Keep rule body clean (no comment); timestamp lives in ruleEditTimes map.
+        const newRule = `${prefix} ${entity}`;
         rules.splice(at, 1);
-        // Updated rule to top for match priority; timestamp is independent.
-        rules = [newRule, ...rules.filter((r) => r !== newRule)];
+        rules = [newRule, ...rules.filter((r) => normalizeRuleBody(r) !== normalizeRuleBody(newRule))];
+        times[ruleTimeKey(target.configKey, action, entity)] = now;
       }
 
       setAppSetting(updated.Config, target.configKey, rules);
+      // Drop timestamps for rule identities that no longer exist.
+      const alive = collectAliveRuleKeys(updated);
+      for (const k of Object.keys(times)) {
+        if (!alive.has(k)) {
+          delete times[k];
+        }
+      }
+      writeRuleEditTimes(updated.Config, times);
       await firstValueFrom(this.profiles.saveProfile(updated));
 
       this.saving = false;
@@ -216,19 +231,18 @@ export class RecentRulesComponent implements OnInit {
       }
       const source = p.Source || 'local';
       const name = p.Name || p.ID;
+      const times = readRuleEditTimes(p);
 
-      this.collectRules(out, p, source, name, 'out', 'filter/endpoints');
-      this.collectRules(out, p, source, name, 'in', 'filter/serviceEndpoints');
+      this.collectRules(out, p, source, name, times, 'out', 'filter/endpoints');
+      this.collectRules(out, p, source, name, times, 'in', 'filter/serviceEndpoints');
     }
 
-    // Per-rule timestamp first; unstamped rules sink below.
     out.sort((a, b) => {
       const at = a.hasRuleTimestamp ? a.ruleEdited : 0;
       const bt = b.hasRuleTimestamp ? b.ruleEdited : 0;
       if (bt !== at) {
         return bt - at;
       }
-      // stable-ish fallback: profile name then list order
       const nameCmp = a.profileName.localeCompare(b.profileName);
       if (nameCmp !== 0) {
         return nameCmp;
@@ -236,7 +250,6 @@ export class RecentRulesComponent implements OnInit {
       return a.ruleIndex - b.ruleIndex;
     });
 
-    // Prefer showing stamped recent rules; fill with unstamped if needed.
     const stamped = out.filter((r) => r.hasRuleTimestamp);
     const unstamped = out.filter((r) => !r.hasRuleTimestamp);
     return [...stamped, ...unstamped].slice(0, this.limit);
@@ -247,6 +260,7 @@ export class RecentRulesComponent implements OnInit {
     p: AppProfile,
     source: string,
     name: string,
+    times: Record<string, number>,
     direction: RuleDirection,
     configKey: 'filter/endpoints' | 'filter/serviceEndpoints',
   ) {
@@ -256,6 +270,12 @@ export class RecentRulesComponent implements OnInit {
       if (!parsed) {
         return;
       }
+
+      const key = ruleTimeKey(configKey, parsed.action, parsed.entity);
+      const fromMap = Number(times[key]) || 0;
+      const fromComment = parsed.timestamp || 0;
+      const ruleEdited = fromMap || fromComment;
+
       out.push({
         id: `${source}/${p.ID}:${configKey}:${ruleIndex}:${rule}`,
         profileSource: source,
@@ -269,8 +289,8 @@ export class RecentRulesComponent implements OnInit {
         action: parsed.action,
         entity: parsed.entity,
         comment: parsed.comment,
-        ruleEdited: parsed.timestamp || 0,
-        hasRuleTimestamp: parsed.timestamp > 0,
+        ruleEdited,
+        hasRuleTimestamp: ruleEdited > 0,
       });
     });
   }
@@ -288,6 +308,56 @@ export class RecentRulesComponent implements OnInit {
       return String(err);
     }
   }
+}
+
+export function ruleTimeKey(
+  configKey: string,
+  action: 'allow' | 'block',
+  entity: string,
+): string {
+  const prefix = action === 'block' ? '-' : '+';
+  return `${configKey}|${prefix}|${entity.trim()}`;
+}
+
+export function readRuleEditTimes(profile: AppProfile): Record<string, number> {
+  const raw = getAppSetting<string>(profile.Config, RULE_EDIT_TIMES_KEY);
+  if (!raw || typeof raw !== 'string') {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      const n = Number(v);
+      if (k && Number.isFinite(n) && n > 0) {
+        out[k] = n;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function writeRuleEditTimes(config: NonNullable<AppProfile['Config']>, times: Record<string, number>) {
+  setAppSetting(config, RULE_EDIT_TIMES_KEY, JSON.stringify(times || {}));
+}
+
+function collectAliveRuleKeys(profile: AppProfile): Set<string> {
+  const alive = new Set<string>();
+  for (const ck of ['filter/endpoints', 'filter/serviceEndpoints'] as const) {
+    const rules = getAppSetting<string[]>(profile.Config, ck) || [];
+    for (const rule of rules) {
+      const p = parseEndpointRule(rule);
+      if (p) {
+        alive.add(ruleTimeKey(ck, p.action, p.entity));
+      }
+    }
+  }
+  return alive;
 }
 
 export function parseEndpointRule(rule: string): {
@@ -322,17 +392,13 @@ export function parseEndpointRule(rule: string): {
   };
 }
 
-/** Build `+ entity # pm:ts=...` preserving other comment text. */
-export function formatEndpointRule(
-  prefix: '+' | '-',
-  entity: string,
-  previousComment: string,
-  timestampSec: number,
-): string {
-  const cleaned = stripRuleTimestamp(previousComment).trim();
-  const tsPart = `${RULE_TS_PREFIX}${timestampSec}`;
-  const comment = cleaned ? `${tsPart} ${cleaned}` : tsPart;
-  return `${prefix} ${entity.trim()} # ${comment}`;
+export function normalizeRuleBody(rule: string): string {
+  const p = parseEndpointRule(rule);
+  if (!p) {
+    return (rule || '').trim();
+  }
+  const prefix = p.action === 'block' ? '-' : '+';
+  return `${prefix} ${p.entity}`;
 }
 
 export function extractRuleTimestamp(comment: string): number {
@@ -345,16 +411,6 @@ export function extractRuleTimestamp(comment: string): number {
   }
   const n = Number(m[1]);
   return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-export function stripRuleTimestamp(comment: string): string {
-  if (!comment) {
-    return '';
-  }
-  return comment
-    .replace(/(?:^|\s)pm:ts=\d{9,12}(?=\s|$)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 /** Convert host-like entity to zone form (.example.com) covering subdomains. */
