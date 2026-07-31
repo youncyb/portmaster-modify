@@ -14,6 +14,9 @@ import { ActionIndicatorService } from 'src/app/shared/action-indicator';
 export type RuleDirection = 'out' | 'in';
 export type RuleAction = 'allow' | 'block' | 'prompt';
 
+/** Marker stored in rule comments: + host # pm:ts=1710000000 */
+export const RULE_TS_PREFIX = 'pm:ts=';
+
 export interface RecentRuleRow {
   id: string;
   profileSource: string;
@@ -27,7 +30,9 @@ export interface RecentRuleRow {
   action: 'allow' | 'block';
   entity: string;
   comment: string;
-  lastEdited: number;
+  /** Per-rule unix seconds; 0 if unknown */
+  ruleEdited: number;
+  hasRuleTimestamp: boolean;
 }
 
 @Component({
@@ -45,7 +50,7 @@ export class RecentRulesComponent implements OnInit {
 
   rows: RecentRuleRow[] = [];
   loading = true;
-  limit = 30;
+  limit = 40;
 
   editing: RecentRuleRow | null = null;
   editAction: RuleAction = 'allow';
@@ -61,9 +66,13 @@ export class RecentRulesComponent implements OnInit {
         next: (list) => {
           this.rows = this.buildRows(list || []);
           this.loading = false;
-          // Keep editor in sync if profile still exists
           if (this.editing) {
-            const still = this.rows.find((r) => r.id === this.editing!.id);
+            const still = this.rows.find((r) =>
+              r.profileKey === this.editing!.profileKey
+              && r.configKey === this.editing!.configKey
+              && r.entity === this.editing!.entity
+              && r.action === this.editing!.action,
+            ) || this.rows.find((r) => r.id === this.editing!.id);
             if (!still) {
               this.cancelEdit();
             } else {
@@ -114,7 +123,6 @@ export class RecentRulesComponent implements OnInit {
     if (!v) {
       return;
     }
-    // example.com -> example.*
     const parts = v.replace(/^\*/, '').split('.').filter(Boolean);
     if (parts.length >= 1) {
       this.editEntity = `${parts[0]}.*`;
@@ -161,15 +169,16 @@ export class RecentRulesComponent implements OnInit {
       }
 
       const at = idx >= 0 ? idx : target.ruleIndex;
+      const now = Math.floor(Date.now() / 1000);
 
       if (action === 'prompt') {
-        // Remove explicit allow/block so default action (ask) can apply.
         rules.splice(at, 1);
       } else {
         const prefix = action === 'block' ? '-' : '+';
-        const newRule = `${prefix} ${entity}`;
+        const prevComment = parseEndpointRule(rules[at] || '')?.comment || target.comment || '';
+        const newRule = formatEndpointRule(prefix, entity, prevComment, now);
         rules.splice(at, 1);
-        // Put updated rule at top so it takes precedence and appears as recent.
+        // Updated rule to top for match priority; timestamp is independent.
         rules = [newRule, ...rules.filter((r) => r !== newRule)];
       }
 
@@ -205,23 +214,32 @@ export class RecentRulesComponent implements OnInit {
       if (!p || p.Internal) {
         continue;
       }
-      const lastEdited = Number(p.LastEdited) || Number(p.Created) || 0;
       const source = p.Source || 'local';
       const name = p.Name || p.ID;
 
-      this.collectRules(out, p, source, name, lastEdited, 'out', 'filter/endpoints');
-      this.collectRules(out, p, source, name, lastEdited, 'in', 'filter/serviceEndpoints');
+      this.collectRules(out, p, source, name, 'out', 'filter/endpoints');
+      this.collectRules(out, p, source, name, 'in', 'filter/serviceEndpoints');
     }
 
-    // Prefer recently edited apps; within an app, list order is top-first (often newest).
+    // Per-rule timestamp first; unstamped rules sink below.
     out.sort((a, b) => {
-      if (b.lastEdited !== a.lastEdited) {
-        return b.lastEdited - a.lastEdited;
+      const at = a.hasRuleTimestamp ? a.ruleEdited : 0;
+      const bt = b.hasRuleTimestamp ? b.ruleEdited : 0;
+      if (bt !== at) {
+        return bt - at;
+      }
+      // stable-ish fallback: profile name then list order
+      const nameCmp = a.profileName.localeCompare(b.profileName);
+      if (nameCmp !== 0) {
+        return nameCmp;
       }
       return a.ruleIndex - b.ruleIndex;
     });
 
-    return out.slice(0, this.limit);
+    // Prefer showing stamped recent rules; fill with unstamped if needed.
+    const stamped = out.filter((r) => r.hasRuleTimestamp);
+    const unstamped = out.filter((r) => !r.hasRuleTimestamp);
+    return [...stamped, ...unstamped].slice(0, this.limit);
   }
 
   private collectRules(
@@ -229,7 +247,6 @@ export class RecentRulesComponent implements OnInit {
     p: AppProfile,
     source: string,
     name: string,
-    lastEdited: number,
     direction: RuleDirection,
     configKey: 'filter/endpoints' | 'filter/serviceEndpoints',
   ) {
@@ -252,7 +269,8 @@ export class RecentRulesComponent implements OnInit {
         action: parsed.action,
         entity: parsed.entity,
         comment: parsed.comment,
-        lastEdited,
+        ruleEdited: parsed.timestamp || 0,
+        hasRuleTimestamp: parsed.timestamp > 0,
       });
     });
   }
@@ -272,7 +290,12 @@ export class RecentRulesComponent implements OnInit {
   }
 }
 
-export function parseEndpointRule(rule: string): { action: 'allow' | 'block'; entity: string; comment: string } | null {
+export function parseEndpointRule(rule: string): {
+  action: 'allow' | 'block';
+  entity: string;
+  comment: string;
+  timestamp: number;
+} | null {
   const raw = (rule || '').trim();
   if (!raw) {
     return null;
@@ -295,7 +318,43 @@ export function parseEndpointRule(rule: string): { action: 'allow' | 'block'; en
     action: m[1] === '-' ? 'block' : 'allow',
     entity: m[2].trim(),
     comment,
+    timestamp: extractRuleTimestamp(comment),
   };
+}
+
+/** Build `+ entity # pm:ts=...` preserving other comment text. */
+export function formatEndpointRule(
+  prefix: '+' | '-',
+  entity: string,
+  previousComment: string,
+  timestampSec: number,
+): string {
+  const cleaned = stripRuleTimestamp(previousComment).trim();
+  const tsPart = `${RULE_TS_PREFIX}${timestampSec}`;
+  const comment = cleaned ? `${tsPart} ${cleaned}` : tsPart;
+  return `${prefix} ${entity.trim()} # ${comment}`;
+}
+
+export function extractRuleTimestamp(comment: string): number {
+  if (!comment) {
+    return 0;
+  }
+  const m = comment.match(/(?:^|\s)pm:ts=(\d{9,12})(?:\s|$)/);
+  if (!m) {
+    return 0;
+  }
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+export function stripRuleTimestamp(comment: string): string {
+  if (!comment) {
+    return '';
+  }
+  return comment
+    .replace(/(?:^|\s)pm:ts=\d{9,12}(?=\s|$)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Convert host-like entity to zone form (.example.com) covering subdomains. */
@@ -305,13 +364,12 @@ export function toZoneDomain(entity: string): string | null {
     return null;
   }
   host = host.replace(/^\.+/, '').replace(/\.+$/, '');
-  if (!host || host.includes('/') || host.includes('*') || host.includes(':')) {
-    // Keep simple: skip IP/CIDR/wildcards already set
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes('/')) {
-      return null;
-    }
+  if (!host) {
+    return null;
   }
-  // Take registrable-ish domain: last two labels (good enough without PSL)
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes('/')) {
+    return null;
+  }
   const labels = host.split('.').filter(Boolean);
   if (labels.length >= 2) {
     const base = labels.slice(-2).join('.');
@@ -336,7 +394,6 @@ function extractHost(entity: string): string | null {
   if (!entity) {
     return null;
   }
-  // Strip optional proto/port suffix: "example.com TCP/443"
   const part = entity.trim().split(/\s+/)[0];
   if (!part || part === '*' || part.startsWith('L:') || part.startsWith('AS') || part.startsWith('C:')) {
     return null;

@@ -1,6 +1,7 @@
 <div class="recent-rules">
   <div class="hint text-xxs text-secondary">
-    Shows rules from recently edited apps (profile last-save time).
+    Edited time is <strong>per rule</strong> (stored as <code># pm:ts=…</code> on save).
+    Rules without a stamp show “—”.
     <strong>Prompt</strong> removes the explicit rule so the app default action can ask again.
   </div>
 
@@ -32,8 +33,11 @@
         </span>
       </div>
       <div class="cell entity" [title]="row.rule">{{ row.entity }}</div>
-      <div class="cell time text-xxs text-secondary">
-        {{ row.lastEdited * 1000 | date:'MM-dd HH:mm' }}
+      <div class="cell time text-xxs text-secondary" [title]="row.hasRuleTimestamp ? (row.ruleEdited * 1000 | date:'yyyy-MM-dd HH:mm:ss') : 'No per-rule timestamp yet'">
+        <ng-container *ngIf="row.hasRuleTimestamp; else noTs">
+          {{ row.ruleEdited * 1000 | date:'MM-dd HH:mm' }}
+        </ng-container>
+        <ng-template #noTs>—</ng-template>
       </div>
       <div class="cell ops">
         <button type="button" class="link-btn" (click)="startEdit(row)">Edit</button>
