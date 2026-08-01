@@ -115,6 +115,12 @@ var (
 	cfgOptionKeepHistory      config.IntOption
 	cfgOptionKeepHistoryOrder = 97
 
+	// Per-rule edit timestamps (JSON map), used by modify dashboard.
+	// Must be a registered option so CleanHierarchicalConfig does not strip it.
+	CfgOptionRuleEditTimesKey   = "filter/ruleEditTimesJson"
+	cfgOptionRuleEditTimes      config.StringOption
+	cfgOptionRuleEditTimesOrder = 98
+
 	// Setting "Enable SPN" at order 128.
 
 	CfgOptionUseSPNKey   = "spn/use"
@@ -290,6 +296,26 @@ Set to 0 days to keep network history forever. Depending on your device, this mi
 	}
 	cfgOptionKeepHistory = config.Concurrent.GetAsInt(CfgOptionKeepHistoryKey, 30)
 	cfgIntOptions[CfgOptionKeepHistoryKey] = cfgOptionKeepHistory
+
+	err = config.Register(&config.Option{
+		Name:           "Rule Edit Timestamps",
+		Key:            CfgOptionRuleEditTimesKey,
+		Description:    "Internal JSON map of per-rule last-edit timestamps for the dashboard recent-rules widget.",
+		OptType:        config.OptTypeString,
+		ReleaseLevel:   config.ReleaseLevelExperimental,
+		ExpertiseLevel: config.ExpertiseLevelDeveloper,
+		DefaultValue:   "",
+		Annotations: config.Annotations{
+			config.SettablePerAppAnnotation: true,
+			config.DisplayOrderAnnotation:   cfgOptionRuleEditTimesOrder,
+			config.CategoryAnnotation:       "General",
+		},
+	})
+	if err != nil {
+		return err
+	}
+	cfgOptionRuleEditTimes = config.Concurrent.GetAsString(CfgOptionRuleEditTimesKey, "")
+	cfgStringOptions[CfgOptionRuleEditTimesKey] = cfgOptionRuleEditTimes
 
 	rulesHelp := strings.ReplaceAll(`Rules are checked from top to bottom, stopping after the first match. They can match:
 

@@ -47,13 +47,40 @@
 
 ### 5. Dashboard：最近应用连接规则（新增）
 
-新增 **Recent App Connection Rules**：
+新增 **Recent App Connection Rules**，集中查看并快速改写各应用的出站 / 入站规则，无需逐个进入 App 设置页。
 
-- 展示各应用最近编辑过的出站/入站规则（Allow / Block）
-- 可就地编辑主机（域名/IP/通配符等）与动作
-- 快捷：Exact domain、Zone（`.domain` 含子域）、`name.*`
-- **Prompt**：删除该条明确规则，使流量回落到应用默认动作（常为 Ask）
-- 引擎层规则本身只有 Allow/Block；Prompt 不是第三条规则类型
+#### 列表
+
+- 展示各应用的 Outgoing / Incoming 规则（Allow / Block）
+- 显示应用图标、方向、动作、主机（域名 / IP）、**逐条编辑时间**
+- 按编辑时间倒序排列，便于处理刚通过 Prompt 或连接菜单新增的规则
+- 时间保存在 profile 数据库（`filter/ruleEditTimesJson`）；**修改一条只更新该条时间**，不会带动同 App 其它规则
+
+![Recent App Connection Rules 列表](docs/images/mod-recent-rules-list.png)
+
+#### 就地编辑
+
+点击 **Edit** 展开编辑面板：
+
+| 能力 | 说明 |
+|------|------|
+| **Allow / Block** | 写入 `+` / `-` 规则（引擎原生支持） |
+| **Prompt** | 删除该条明确规则，流量回落到应用默认动作（常为 Ask） |
+| **Host / Entity** | 可改 IP、域名、通配符、CIDR、LAN 等 |
+| **Exact Domain** | 收敛为精确域名 |
+| **Zone (.domain)** | 改为 `.example.com`（含主域与子域） |
+| **name.*** | 前缀通配快捷 |
+| **Open App Settings** | 跳转到该应用完整设置页 |
+
+![Recent App Connection Rules 编辑面板](docs/images/mod-recent-rules-edit.png)
+
+#### 规则语法提示
+
+- `.example.com`：主域 + 所有子域  
+- `example.com`：仅该 FQDN  
+- `*cdn*`：包含匹配  
+- IP / CIDR / `LAN` / `Internet` 等同样支持  
+- 引擎层规则本身只有 Allow/Block；Prompt 通过“删除规则”实现，不是第三条规则类型  
 
 ### 6. 分支说明（本 fork）
 
